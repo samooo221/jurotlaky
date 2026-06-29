@@ -1,5 +1,5 @@
 // ponytail: bump CACHE to ship an update (old caches get cleared on activate)
-const CACHE = 'tlaky-v1';
+const CACHE = 'tlaky-v2';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

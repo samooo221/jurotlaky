@@ -70,7 +70,12 @@
       <label>Track</label>
       <select id="rec-track"></select>
       <div class="row">
-        <div><label>Driver</label><input id="rec-driver" list="drivers" placeholder="Juro"></div>
+        <div><label>Driver</label>
+          <div style="display:flex;gap:6px">
+            <select id="rec-driver" style="flex:1"></select>
+            <button class="ghost" type="button" style="min-width:46px;flex:none" onclick="addDriver('rec-driver')">＋</button>
+          </div>
+        </div>
         <div><label>Asphalt temp °C</label><input id="rec-asphalt" type="number" inputmode="decimal" placeholder="45"></div>
       </div>
       <label>Driving style</label>
@@ -85,6 +90,7 @@
     <div class="card hide" id="rec-out">
       <div><span class="pill" id="rec-target"></span> <span class="pill" id="rec-conf"></span></div>
       <div class="kart" id="rec-kart"></div>
+      <div class="note" id="rec-breakdown"></div>
       <div class="note" id="rec-explain"></div>
       <button class="ghost" style="width:100%;margin-top:10px" onclick="prefillLog()">Log the run afterwards →</button>
     </div>
@@ -100,7 +106,12 @@
         <div><label>Date</label><input id="log-date" type="date"></div>
       </div>
       <div class="row">
-        <div><label>Driver</label><input id="log-driver" list="drivers" placeholder="Juro"></div>
+        <div><label>Driver</label>
+          <div style="display:flex;gap:6px">
+            <select id="log-driver" style="flex:1"></select>
+            <button class="ghost" type="button" style="min-width:46px;flex:none" onclick="addDriver('log-driver')">＋</button>
+          </div>
+        </div>
         <div><label>Asphalt temp °C</label><input id="log-asphalt" type="number" inputmode="decimal" placeholder="45"></div>
       </div>
 
@@ -153,6 +164,11 @@
       </div>
     </div>
     <div class="card">
+      <h2>Drivers</h2>
+      <p class="note">Each driver's learned adjustment vs the track base — this is the per-driver memory.</p>
+      <div id="drivers-list"></div>
+    </div>
+    <div class="card">
       <h2>Logged runs (<span id="run-count">0</span>)</h2>
       <div id="runs-list"></div>
     </div>
@@ -169,7 +185,6 @@
   </section>
 </main>
 
-<datalist id="drivers"></datalist>
 
 <nav class="tabs">
   <button data-tab="rec" class="on" onclick="showTab('rec')"><span class="ic">🎯</span>Recommend</button>
@@ -183,7 +198,7 @@
 const REF_TEMP = 45;        // °C asphalt that the seed "base" pressures assume
 const COEFF    = 0.004;     // bar of cold-pressure change per °C asphalt. ponytail: gentle default, raise if hot pressures over/undershoot with temp
 const STYLE    = {chill:-0.02, normal:0, push:0.02}; // bar nudge; push=lower cold (more heat). ponytail: knob, refine with data
-const DRIVER_W = 2;         // same-driver runs weighted this much vs others
+const K_DRIVER = 2;         // shrinkage: a driver's offset is trusted only after a few runs. ponytail: knob
 const SEED_W   = 1;         // seed base counts as ~one run, so real data overtakes it. ponytail
 const POS = ["Front L","Front R","Rear L","Rear R"];
 
@@ -196,15 +211,22 @@ const SEED = {
     "Bruck":         { target:0.80, base:[0.62,0.64,0.61,0.66] },
     "Lonato":        { target:0.80, base:null } // not transcribed yet — log a run to seed it
   },
-  runs: []
+  runs: [],
+  drivers: ["Juro"]
 };
 
 const KEY = "tlaky_v1";
 let STATE = load();
 
 function load(){
-  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s&&s.tracks) return s; }catch(e){}
+  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s&&s.tracks){ migrate(s); return s; } }catch(e){}
   return JSON.parse(JSON.stringify(SEED));
+}
+function migrate(s){ // backward-compat for backups saved before drivers existed
+  if(!Array.isArray(s.drivers)){
+    const set=[...new Set((s.runs||[]).map(r=>r.driver).filter(Boolean))];
+    s.drivers = set.length?set:["Juro"];
+  }
 }
 function save(){ localStorage.setItem(KEY, JSON.stringify(STATE)); }
 function num(id){ const v=parseFloat(document.getElementById(id).value); return isNaN(v)?null:v; }
@@ -215,34 +237,51 @@ function r2(x){ return Math.round(x*100)/100; }
 function idealCold(run, target){
   return run.cold.map((c,i)=> c - (run.hot[i] - target));
 }
-// best cold setup for a track+driver, normalised to REF_TEMP
-function baseFor(track, driver){
+// a run's ideal cold, pulled to REF_TEMP so runs at different asphalt temps compare
+function normIdeal(run, target){
+  const ic = idealCold(run, target);
+  return (run.asphalt!=null) ? ic.map(v=> v + COEFF*(run.asphalt-REF_TEMP)) : ic;
+}
+// driver-agnostic best cold setup for a track, at REF_TEMP
+function trackBase(track){
   const t = STATE.tracks[track]; if(!t) return null;
-  const target = t.target;
-  let sum=[0,0,0,0], w=0, real=0, mine=0;
-  // seed prior
-  if(t.base){ for(let i=0;i<4;i++) sum[i]+=t.base[i]*SEED_W; w+=SEED_W; }
+  let sum=[0,0,0,0], w=0, real=0;
+  if(t.base){ for(let i=0;i<4;i++) sum[i]+=t.base[i]*SEED_W; w+=SEED_W; } // seed prior
   for(const run of STATE.runs){
     if(run.track!==track) continue;
     real++;
-    const dm = driver && run.driver && run.driver.toLowerCase()===driver.toLowerCase();
-    if(dm) mine++;
-    const rw = dm?DRIVER_W:1;
-    const ic = idealCold(run, target);
-    const norm = (run.asphalt!=null) ? (ic.map(v=> v + COEFF*(run.asphalt-REF_TEMP))) : ic; // pull each run to REF temp
-    for(let i=0;i<4;i++) sum[i]+=norm[i]*rw;
-    w+=rw;
+    const ni = normIdeal(run, t.target);
+    for(let i=0;i<4;i++) sum[i]+=ni[i];
+    w++;
   }
   if(w===0) return null;
-  return { base:sum.map(s=>s/w), target, real, mine, seeded:!!t.base };
+  return { base:sum.map(s=>s/w), target:t.target, real };
 }
-
+// how a driver consistently deviates from the generic track base (shrunk toward 0)
+// ponytail: O(runs^2) via trackBase-per-run; runs are tiny
+function driverOffset(driver){
+  if(!driver) return { offset:[0,0,0,0], n:0 };
+  const d = driver.toLowerCase();
+  let sum=[0,0,0,0], n=0;
+  for(const run of STATE.runs){
+    if(!run.driver || run.driver.toLowerCase()!==d) continue;
+    const tb = trackBase(run.track); if(!tb) continue;
+    const ni = normIdeal(run, STATE.tracks[run.track].target);
+    for(let i=0;i<4;i++) sum[i]+= ni[i]-tb.base[i];
+    n++;
+  }
+  if(n===0) return { offset:[0,0,0,0], n:0 };
+  const shrink = n/(n+K_DRIVER);
+  return { offset:sum.map(s=>(s/n)*shrink), n };
+}
 function recommend(track, driver, asphalt, style){
-  const b = baseFor(track, driver); if(!b) return null;
+  const tb = trackBase(track); if(!tb) return null;
+  const off = driverOffset(driver);
   const a = (asphalt!=null)?asphalt:REF_TEMP;
   const sd = STYLE[style]||0;
-  const cold = b.base.map(v=> r2(v - COEFF*(a-REF_TEMP) - sd));
-  return { cold, ...b, asphalt:a, usedDefaultTemp:(asphalt==null) };
+  const cold = tb.base.map((v,i)=> r2(v + off.offset[i] - COEFF*(a-REF_TEMP) - sd));
+  return { cold, base:tb.base.map(r2), offset:off.offset.map(r2), target:tb.target,
+           real:tb.real, driverN:off.n, asphalt:a, usedDefaultTemp:(asphalt==null), driver };
 }
 
 // ---- UI ----
@@ -266,9 +305,21 @@ function fillTrackSelects(){
     sel.innerHTML = names.map(n=>`<option>${n}</option>`).join("");
     if(names.includes(cur)) sel.value=cur;
   }
-  const dl=document.getElementById("drivers");
-  const drv=[...new Set(STATE.runs.map(r=>r.driver).filter(Boolean))];
-  dl.innerHTML = (drv.length?drv:["Juro"]).map(d=>`<option value="${d}">`).join("");
+  fillDriverSelects();
+}
+function fillDriverSelects(){
+  for(const id of ["rec-driver","log-driver"]){
+    const sel=document.getElementById(id); const cur=sel.value;
+    sel.innerHTML = STATE.drivers.map(d=>`<option>${d}</option>`).join("");
+    if(STATE.drivers.includes(cur)) sel.value=cur;
+  }
+}
+function addDriver(selId){
+  const n=(prompt("New driver name?")||"").trim(); if(!n) return;
+  if(!STATE.drivers.some(d=>d.toLowerCase()===n.toLowerCase())){ STATE.drivers.push(n); save(); }
+  fillDriverSelects();
+  document.getElementById(selId).value=STATE.drivers.find(d=>d.toLowerCase()===n.toLowerCase());
+  renderData();
 }
 
 function doRecommend(){
@@ -279,21 +330,26 @@ function doRecommend(){
   const out=document.getElementById("rec-out");
   if(!rec){ out.classList.remove("hide");
     document.getElementById("rec-kart").innerHTML="";
+    document.getElementById("rec-breakdown").textContent="";
     document.getElementById("rec-target").textContent="no data yet";
     document.getElementById("rec-conf").textContent="";
     document.getElementById("rec-explain").textContent="No base or runs for this track. Log a run first.";
     return;
   }
+  const fmt=a=>a.map(v=>v.toFixed(2)).join("/");
+  const fmtS=a=>a.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("/");
   out.classList.remove("hide");
   document.getElementById("rec-target").textContent="target "+rec.target.toFixed(2)+" bar";
   document.getElementById("rec-conf").textContent =
-     rec.real===0 ? "seeded base only" : `${rec.real} run${rec.real>1?"s":""}${rec.mine?` · ${rec.mine} for ${driver}`:""}`;
+     rec.driverN ? `${driver}: ${rec.driverN} run${rec.driverN>1?"s":""} learned`
+                 : (driver? `${driver}: new — track base only` : "track base");
   document.getElementById("rec-kart").innerHTML = rec.cold.map((v,i)=>
      `<div><div class="pos">${POS[i]}</div><div class="big">${v.toFixed(2)}</div></div>`).join("");
+  document.getElementById("rec-breakdown").textContent =
+     `base ${fmt(rec.base)}  ·  ${driver||"driver"} adj ${fmtS(rec.offset)}`;
   let ex=`Set these cold to land near ${rec.target.toFixed(2)} bar hot at ${rec.asphalt.toFixed(0)}°C asphalt`;
   if(rec.usedDefaultTemp) ex+=` (no temp entered → assumed ${REF_TEMP}°C)`;
-  ex+=`. Style: ${recStyle}.`;
-  if(rec.real===0) ex+=` ⚠ Starting point only — log runs to make it accurate.`;
+  ex+=`. Style: ${recStyle}. Track base from ${rec.real} run${rec.real===1?"":"s"}+seed.`;
   document.getElementById("rec-explain").textContent=ex;
 }
 
@@ -339,6 +395,12 @@ function renderData(){
       <div style="text-align:right">target<br>
       <input style="width:80px;text-align:center" type="number" step="0.01" value="${t.target}" onchange="setTarget('${name.replace(/'/g,"\\'")}',this.value)"></div></div>`;
   }).join("");
+  const dv=document.getElementById("drivers-list");
+  dv.innerHTML = STATE.drivers.map(name=>{
+    const o=driverOffset(name);
+    const sig=o.n? o.offset.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("/") : null;
+    return `<div class="runrow"><div><b>${name}</b><br><small>${o.n? `${o.n} run${o.n>1?"s":""} · adj ${sig}`:"no runs yet · uses track base"}</small></div></div>`;
+  }).join("");
   const rl=document.getElementById("runs-list");
   document.getElementById("run-count").textContent=STATE.runs.length;
   rl.innerHTML = STATE.runs.length? STATE.runs.slice().reverse().map(r=>
@@ -360,7 +422,7 @@ function exportData(){
 function importData(ev){
   const f=ev.target.files[0]; if(!f)return;
   const rd=new FileReader();
-  rd.onload=()=>{ try{ const s=JSON.parse(rd.result); if(!s.tracks)throw 0; STATE=s; save(); fillTrackSelects(); renderData(); alert("Imported."); }
+  rd.onload=()=>{ try{ const s=JSON.parse(rd.result); if(!s.tracks)throw 0; migrate(s); STATE=s; save(); fillTrackSelects(); renderData(); alert("Imported."); }
     catch(e){ alert("Bad file."); } };
   rd.readAsText(f);
 }
@@ -381,6 +443,9 @@ fillTrackSelects();
   const cool=recommend("Bruck","x",30,"normal").cold[0];
   const hot =recommend("Bruck","x",60,"normal").cold[0];
   console.assert(hot<cool,"hotter asphalt must lower cold",cool,hot);
+  console.assert(driverOffset("__none__").n===0,"unknown driver offset must be empty");
+  const e1=recommend("Bruck","",45,"normal").cold, e2=recommend("Bruck","__none__",45,"normal").cold;
+  console.assert(JSON.stringify(e1)===JSON.stringify(e2),"unknown driver must equal zero-offset base");
   console.log("tlaky self-check passed");
 })();
 

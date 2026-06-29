@@ -31,15 +31,29 @@ Example (Franciacorta): set `0.69` cold, measured `0.82` hot, target `0.80`
 "Teoreticky" numbers exactly — verified in the in-page self-check.
 
 The recommender:
-1. Takes the track's **base** cold setup (seeded from notes, refined by logged runs).
-2. Normalises every logged run to a reference asphalt temp, then averages them.
+1. Builds a driver-agnostic **track base** = seed + every logged run on that track,
+   each normalised to a reference asphalt temp, then averaged.
+2. Adds the **driver offset** — how that driver consistently deviates from the base,
+   learned across *all* their runs (so their style carries across tracks).
 3. Adjusts for **today's asphalt temp** (hotter track → more rise → lower cold).
 4. Applies a small **driving-style** nudge.
-5. Weights **same-driver** runs higher.
+
+`recommendation = track base + driver offset − temp adj − style adj`
 
 This is the "learning": no neural net, just a transparent running average that gets
 sharper every time you log a run. With ~20 data points that is the correct tool — a
 model with more knobs would just fit noise.
+
+### Per-driver learning ("F1 style")
+
+Drivers have consistent differences (a harder pusher heats tyres more → needs lower cold).
+The **driver offset** captures that as an additive, per-tyre adjustment vs the track base,
+**shrunk** toward zero until a few runs exist (`K_DRIVER`) so one run can't swing it. The
+seed numbers are Juro's own notes, so Juro ≈ baseline (offset ~0) and other drivers deviate
+from it. A brand-new driver gets the plain track base until they log runs. The model
+**converges**: with enough runs, each driver's recommendation lands on their own true ideal.
+The Recommend screen shows `base … · <driver> adj …` and the Data tab lists each driver's
+learned signature.
 
 ## Per-tyre layout
 
@@ -67,7 +81,7 @@ defaults — tune them as real data shows whether recommendations over/undershoo
 | `REF_TEMP` | `45` | Asphalt °C the seed base pressures assume |
 | `COEFF` | `0.004` | Bar of cold-pressure change per °C asphalt |
 | `STYLE` | `±0.02` | Bar nudge for chill / normal / push |
-| `DRIVER_W` | `2` | How much same-driver runs outweigh others |
+| `K_DRIVER` | `2` | Shrinkage — a driver's offset is trusted only after a few runs |
 | `SEED_W` | `1` | Seed base counts as ~1 run, so real data overtakes it |
 
 ## Seed data (from Juro's PDF notes)
