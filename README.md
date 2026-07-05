@@ -31,17 +31,39 @@ Example (Franciacorta): set `0.69` cold, measured `0.82` hot, target `0.80`
 "Teoreticky" numbers exactly — verified in the in-page self-check.
 
 The recommender:
-1. Builds a **track base** = seed + every logged run on that track, each normalised to a
-   reference asphalt temp, then a **recency-weighted** average (recent runs count more).
+1. Builds a **track base** = seed + every logged run on that track, each normalised to
+   reference conditions, then a **recency-weighted** average (recent runs count more).
 2. Adds four **learned offsets** — how the **driver**, **kart class**, **tyre**, and
    **weather** each deviate from that base, learned across *all* runs with that value.
-3. Adjusts for **today's asphalt temp** (hotter track → more rise → lower cold).
+3. Adjusts for **today's temperature** (hotter → more rise → lower cold).
 
 `recommendation = track base + driver + kart + tyre + weather − temp adj`
 
 This is the "learning": no neural net, just transparent recency-weighted averages that get
 sharper every time you log a run. With a few dozen data points that is the correct tool — a
 model with more knobs would just fit noise.
+
+### Temperature: physics when we have it, a linear guess when we don't
+
+The pressure rise is really a **thermodynamics** problem: at fixed tyre volume,
+`(P+atm)/(T+273)` is constant (ideal gas). So when a run carries **cold *and* hot tyre
+temps**, we normalise and extrapolate it with the gas law — `gasCold`/`gasHot` in the code —
+which is real physics, not a fitted slope. When temps are missing we fall back to the old
+linear `COEFF·Δasphalt` term. The switch is **per tyre**: a run with three good probes and one
+missing still uses physics on three corners. The recommendation stays a single number — the gas
+law only replaces the *temperature term* inside the same base+offsets pipeline, so there's no
+second competing model. `predicted hot = target` by construction (the cold is *built* to hit
+it); we don't parade the raw gas-law hot number, because real tyres don't perfectly obey
+ideal-gas at 1.0 bar — that's what `PATM` is there to calibrate.
+
+### Confidence (± and low/med/high)
+
+Every recommendation now carries a **± band** per tyre and a plain **confidence** word. The ±
+is the spread of the runs feeding the base and offsets (weighted variance ÷ effective sample
+size), floored at the gauge resolution `SIG_FLOOR`. Confidence is driven by the *effective*
+number of runs (decay-aware): `low` under ~2, `medium` under ~6, `high` beyond — downgraded if
+the spread is wide. It reads `confidence: medium · physics` (or `· linear temp` on the
+fallback) so Juro sees how much to trust the number, not just the number.
 
 ### Factorised per-category learning ("F1 style")
 
@@ -82,7 +104,11 @@ defaults — tune them as real data shows whether recommendations over/undershoo
 | Knob | Default | Meaning |
 |------|---------|---------|
 | `REF_TEMP` | `45` | Asphalt °C the seed base pressures assume |
-| `COEFF` | `0.004` | Bar of cold-pressure change per °C asphalt |
+| `COEFF` | `0.004` | Bar of cold-pressure change per °C asphalt (the *fallback* temp term, used only when tyre temps are missing) |
+| `PATM` | `1.0` | Atmospheric bar for gauge→absolute in the gas law. The main gas-law calibration knob (~1.013 at sea level, less at altitude) |
+| `TC_REF / TH_REF` | `25 / 55` | Reference cold/hot tyre °C that gas-normalised runs are pulled to — set to what Juro actually sees at ~45°C asphalt |
+| `TEMP_MIN_N` | `1` | Temp'd runs needed on a tyre before the gas path is trusted over the COEFF fallback |
+| `SIG_FLOOR` | `0.02` | Bar floor on any ± — nothing is known better than the gauge resolution |
 | `K_DRIVER` | `2` | Shrinkage — any category's offset is trusted only after a few runs |
 | `SEED_W` | `1` | Seed base counts as ~1 (oldest) run, so real data overtakes it |
 | `DECAY` | `0.85` | Recency — each older run counts this much less; `1` = flat average (never forgets) |

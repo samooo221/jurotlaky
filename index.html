@@ -210,7 +210,13 @@ const COEFF    = 0.004;     // bar of cold-pressure change per °C asphalt. pony
 const K_DRIVER = 2;         // trust: a category's offset is shrunk toward 0 until a few runs exist (n/(n+K)). ponytail: knob
 const SEED_W   = 1;         // seed base counts as ~one (oldest) run, so real data overtakes it. ponytail
 const DECAY    = 0.85;      // recency: each older run counts DECAY× less than the next. 1 = flat average (never forgets), lower = adapts faster but twitchier. ponytail: knob
-const CLAMP_LO = 0.2, CLAMP_HI = 1.6; // a run whose implied ideal cold lands outside this band (bar) is a data-entry error — skipped, not learned from. ponytail: widen if legit wet runs get dropped
+const CLAMP_LO = 0.2, CLAMP_HI = 1.6; // a run whose implied ideal cold lands outside this band (bar) is a data-entry error — skipped, not learned from. ponytail: widen if legit wet runs get dropped. NOTE: a bad tyre-temp entry now also trips this via the gas normalisation — desirable.
+// ---- gas-law (physics) constants: when a run has cold+hot tyre temps, the pressure rise is predicted from thermodynamics instead of the linear COEFF ----
+const PATM   = 1.0;         // bar atmospheric — gauge→absolute. ponytail: ~1.013 at sea level, ~-0.012/100m altitude — knob
+const KELVIN = 273.15;
+const TC_REF = 25, TH_REF = 55; // reference cold / hot tyre °C that gas-normalised runs are pulled to. ponytail: set to the temps Juro actually sees at ~45°C asphalt
+const TEMP_MIN_N = 1;       // temp'd runs needed on a tyre before trusting the gas path over the COEFF fallback. ponytail: knob
+const SIG_FLOOR  = 0.02;    // bar — gauge-resolution floor on any ± (nothing is known better than this). ponytail: knob
 const POS = ["Front L","Front R","Rear L","Rear R"];
 
 // ---- taxonomy: kart classes and tyres (from Juro) ----
@@ -278,10 +284,23 @@ function r2(x){ return Math.round(x*100)/100; }
 function idealCold(run, target){
   return run.cold.map((c,i)=> c - (run.hot[i] - target));
 }
-// a run's ideal cold, pulled to REF_TEMP so runs at different asphalt temps compare
+// gas law at fixed tyre volume (gauge pressures + °C): (P+PATM)/(T+KELVIN) is constant
+function gasHot(cold, Tc, Th){ return (cold+PATM)*(Th+KELVIN)/(Tc+KELVIN) - PATM; } // forward: predict hot from cold + temps
+function gasCold(hot, Tc, Th){ return (hot +PATM)*(Tc+KELVIN)/(Th+KELVIN) - PATM; } // inverse: cold to set for a target hot
+// per-tyre: does this run carry both cold and hot temp for corner i?
+function hasT(run, i){ return run.coldTemp && run.hotTemp && run.coldTemp[i]!=null && run.hotTemp[i]!=null; }
+
+// a run's ideal cold, pulled to REFERENCE conditions so runs at different temps compare.
+// per tyre: if temps exist → gas-law shift (move from the run's temps to TC_REF/TH_REF);
+//           else → the old linear COEFF shift on asphalt temp; else 0. idealCold is preserved either way.
 function normIdeal(run, target){
   const ic = idealCold(run, target);
-  return (run.asphalt!=null) ? ic.map(v=> v + COEFF*(run.asphalt-REF_TEMP)) : ic;
+  const gcRef = gasCold(target, TC_REF, TH_REF);
+  return ic.map((v,i)=>{
+    if(hasT(run,i)) return v + (gcRef - gasCold(target, run.coldTemp[i], run.hotTemp[i]));
+    if(run.asphalt!=null) return v + COEFF*(run.asphalt-REF_TEMP);
+    return v;
+  });
 }
 // a run is only trusted if its implied cold is physically sane (guards fat-finger entries)
 function plausible(ni){ return ni.every(v=> v>=CLAMP_LO && v<=CLAMP_HI); }
@@ -292,16 +311,20 @@ function decayW(i, n){ return Math.pow(DECAY, n-1-i); }
 function trackBase(track){
   const t = STATE.tracks[track]; if(!t) return null;
   const runs = STATE.runs.filter(r=>r.track===track);
-  let sum=[0,0,0,0], w=0, real=0;
+  let sum=[0,0,0,0], sq=[0,0,0,0], w=0, w2=0, real=0;
   runs.forEach((run,i)=>{
     const ni = normIdeal(run, t.target);
     if(!plausible(ni)) return;
     const wt = decayW(i, runs.length);
-    for(let k=0;k<4;k++) sum[k]+=ni[k]*wt; w+=wt; real++;
+    for(let k=0;k<4;k++){ sum[k]+=ni[k]*wt; sq[k]+=ni[k]*ni[k]*wt; } w+=wt; w2+=wt*wt; real++;
   });
-  if(t.base){ const wt = SEED_W*Math.pow(DECAY, runs.length); for(let k=0;k<4;k++) sum[k]+=t.base[k]*wt; w+=wt; } // seed = oldest run
+  if(t.base){ const wt = SEED_W*Math.pow(DECAY, runs.length); // seed = oldest run
+    for(let k=0;k<4;k++){ sum[k]+=t.base[k]*wt; sq[k]+=t.base[k]*t.base[k]*wt; } w+=wt; w2+=wt*wt; }
   if(w===0) return null;
-  return { base:sum.map(s=>s/w), target:t.target, real };
+  const base = sum.map(s=>s/w);
+  const varr = base.map((m,k)=> Math.max(0, sq[k]/w - m*m));   // one-pass weighted variance
+  const nEff = w2>0 ? (w*w)/w2 : 0;                            // Kish effective sample size (decay-aware)
+  return { base, target:t.target, real, varr, nEff };
 }
 // how a category value (a driver / kart / tyre / weather) deviates from the generic track base
 // ponytail: O(runs^2) via trackBase-per-run; runs are tiny.
@@ -309,31 +332,74 @@ function trackBase(track){
 //   together (e.g. one class only ever on one tyre) their offsets split that run's deviation; the SUM is right
 //   for seen combos, only novel combos drift. Negligible at this data volume; a joint ridge fit is the upgrade path.
 function catOffset(field, value){
-  if(!value) return { offset:[0,0,0,0], n:0 };
+  if(!value) return { offset:[0,0,0,0], n:0, varr:[0,0,0,0], nEff:0 };
   const v = value.toLowerCase();
   const runs = STATE.runs.filter(r=> (r[field]||"").toLowerCase()===v);
-  let sum=[0,0,0,0], w=0, n=0;
+  let sum=[0,0,0,0], sq=[0,0,0,0], w=0, w2=0, n=0;
   runs.forEach((run,i)=>{
     const t = STATE.tracks[run.track]; const tb = trackBase(run.track); if(!t||!tb) return;
     const ni = normIdeal(run, t.target);
     if(!plausible(ni)) return;
     const wt = decayW(i, runs.length);
-    for(let k=0;k<4;k++) sum[k]+= (ni[k]-tb.base[k])*wt; w+=wt; n++;
+    for(let k=0;k<4;k++){ const d=ni[k]-tb.base[k]; sum[k]+=d*wt; sq[k]+=d*d*wt; } w+=wt; w2+=wt*wt; n++;
   });
-  if(n===0) return { offset:[0,0,0,0], n:0 };
+  if(n===0) return { offset:[0,0,0,0], n:0, varr:[0,0,0,0], nEff:0 };
   const shrink = n/(n+K_DRIVER); // trust grows with the COUNT of runs; decay handles recency separately
-  return { offset:sum.map(s=>(s/w)*shrink), n };
+  const mean = sum.map(s=>s/w);
+  const varr = mean.map((m,k)=> Math.max(0, sq[k]/w - m*m));
+  const nEff = w2>0 ? (w*w)/w2 : 0;
+  return { offset:mean.map(m=>m*shrink), n, varr, nEff };
+}
+// recency-weighted expected cold/hot tyre temps for a track, at today's asphalt.
+// cold ≈ absolute (tracks ambient, ~slope 0); hot ≈ delta-over-asphalt (tracks asphalt, ~slope 1).
+function trackTemps(track, a){
+  const runs = STATE.runs.filter(r=>r.track===track);
+  const sTc=[0,0,0,0], sTh=[0,0,0,0], w=[0,0,0,0], nT=[0,0,0,0];
+  runs.forEach((run,i)=>{
+    const wt = decayW(i, runs.length), ra = run.asphalt!=null?run.asphalt:REF_TEMP;
+    for(let k=0;k<4;k++) if(hasT(run,k)){ sTc[k]+=run.coldTemp[k]*wt; sTh[k]+=(run.hotTemp[k]-ra)*wt; w[k]+=wt; nT[k]++; }
+  });
+  const expTc=[0,0,0,0], expTh=[0,0,0,0];
+  for(let k=0;k<4;k++) if(w[k]>0){ expTc[k]=sTc[k]/w[k]; expTh[k]=a + sTh[k]/w[k]; }
+  return { expTc, expTh, nT };
 }
 
 function recommend(track, driver, kart, tyre, weather, asphalt){
   const tb = trackBase(track); if(!tb) return null;
   const off = { driver:catOffset("driver",driver), kart:catOffset("kart",kart),
                 tyre:catOffset("tyre",tyre), weather:catOffset("weather",weather) };
+  const offs = [off.driver, off.kart, off.tyre, off.weather];
   const a = (asphalt!=null)?asphalt:REF_TEMP;
-  const cold = tb.base.map((v,i)=> r2(
-     v + off.driver.offset[i] + off.kart.offset[i] + off.tyre.offset[i] + off.weather.offset[i] - COEFF*(a-REF_TEMP)));
+  const tw = trackTemps(track, a);
+  const gcRef = gasCold(tb.target, TC_REF, TH_REF);
+  const runs = STATE.runs.filter(r=>r.track===track);
+  const cold=[0,0,0,0], predHot=[0,0,0,0], sigCold=[0,0,0,0], sigHot=[0,0,0,0]; let usedGas=false;
+  for(let i=0;i<4;i++){
+    const baseOff = tb.base[i] + offs.reduce((s,o)=>s+o.offset[i],0);
+    if(tw.nT[i] >= TEMP_MIN_N){                                    // GAS PATH — physics handles the temp shift
+      usedGas = true;
+      cold[i] = r2( baseOff + (gasCold(tb.target, tw.expTc[i], tw.expTh[i]) - gcRef) );
+    } else {                                                      // FALLBACK — identical to before
+      cold[i] = r2( baseOff - COEFF*(a-REF_TEMP) );
+    }
+    predHot[i] = tb.target; // cold is built to land on target; the honest spread is sigHot below (real tyres don't perfectly obey ideal-gas, so don't parade a gas-law hot number)
+    // cold ±: spread of the learned setup (base + offsets), each shrunk by its own effective N
+    let vv = (tb.nEff>0? tb.varr[i]/tb.nEff : 0);
+    for(const o of offs) if(o.nEff>0) vv += o.varr[i]/o.nEff;
+    sigCold[i] = r2(Math.sqrt(vv + SIG_FLOOR*SIG_FLOOR));
+    // hot ±: how far MEASURED hot actually landed from target across this track's runs (real scatter, empirical)
+    let ss=0, cnt=0;
+    for(const run of runs){ if(run.hot[i]==null || !plausible(normIdeal(run, tb.target))) continue; const e=run.hot[i]-tb.target; ss+=e*e; cnt++; }
+    sigHot[i] = cnt>0 ? r2(Math.max(Math.sqrt(ss/cnt), SIG_FLOOR)) : Math.max(sigCold[i], SIG_FLOOR);
+  }
+  // confidence from the smallest effective sample size that fed the answer
+  let nEffMin = tb.nEff;
+  for(const o of offs) if(o.n>0) nEffMin = Math.min(nEffMin, o.nEff);
+  const meanSig = sigCold.reduce((s,v)=>s+v,0)/4;
+  let conf = nEffMin<2 ? "low" : nEffMin<6 ? "medium" : "high";
+  if(meanSig>0.05){ conf = conf==="high" ? "medium" : "low"; } // wide spread → downgrade
   return { cold, base:tb.base.map(r2), off, target:tb.target, real:tb.real,
-           asphalt:a, usedDefaultTemp:(asphalt==null) };
+           asphalt:a, usedDefaultTemp:(asphalt==null), predHot, sigCold, sigHot, conf, usedGas };
 }
 
 // ---- UI: selects ----
@@ -413,10 +479,9 @@ function doRecommend(){
   const fmtS=a=>a.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("/");
   out.classList.remove("hide");
   document.getElementById("rec-target").textContent="target "+rec.target.toFixed(2)+" bar";
-  const dn=rec.off.driver.n;
-  document.getElementById("rec-conf").textContent = dn? `${driver}: ${dn} run${dn>1?"s":""} learned` : (driver?`${driver}: new`:"track base");
+  document.getElementById("rec-conf").textContent = `confidence: ${rec.conf} · ${rec.usedGas?"physics":"linear temp"}`;
   document.getElementById("rec-kart").innerHTML = rec.cold.map((v,i)=>
-     `<div><div class="pos">${POS[i]}</div><div class="big">${v.toFixed(2)}</div></div>`).join("");
+     `<div><div class="pos">${POS[i]}</div><div class="big">${v.toFixed(2)}<small>±${rec.sigCold[i].toFixed(2)}</small></div></div>`).join("");
   // per-dimension contribution line (only the ones actually chosen)
   const dims=[[driver,rec.off.driver],[kart,rec.off.kart],[tyre,rec.off.tyre],[weather,rec.off.weather]]
     .filter(([v])=>v && v.trim())
@@ -425,6 +490,7 @@ function doRecommend(){
   let ex=`Set these cold to land near ${rec.target.toFixed(2)} bar hot at ${rec.asphalt.toFixed(0)}°C asphalt`;
   if(rec.usedDefaultTemp) ex+=` (no temp entered → assumed ${REF_TEMP}°C)`;
   ex+=`. Track base from ${rec.real} run${rec.real===1?"":"s"}+seed.`;
+  if(rec.usedGas) ex+=` Gas law used your logged tyre temps for the rise; runs land ≈${rec.target.toFixed(2)} bar ±${(rec.sigHot.reduce((s,v)=>s+v,0)/4).toFixed(2)}.`;
   document.getElementById("rec-explain").textContent=ex;
 }
 
@@ -582,6 +648,14 @@ fillAll();
   console.assert(JSON.stringify(a)===JSON.stringify(b),"unknown offsets must equal zero-offset base");
   // outlier clamp rejects a physically impossible entry (0.8 hot typed as 8.0)
   console.assert(!plausible(normIdeal({cold:[.62,.64,.61,.66],hot:[8,8,8,8],asphalt:45},t)),"clamp must reject fat-finger");
+  // gas law: exact inverse, and hotter hot-temp needs lower cold
+  console.assert(Math.abs(gasCold(gasHot(0.65,20,60),20,60)-0.65)<1e-9,"gas round-trip");
+  console.assert(gasCold(0.80,20,70) < gasCold(0.80,20,50),"gasCold: hotter hot temp -> lower cold");
+  // a run measured AT the reference temps normalises to itself (gas shift ≈ 0)
+  const refRun={cold:[.62,.64,.61,.66],hot:[.80,.80,.80,.80],asphalt:45,coldTemp:[TC_REF,TC_REF,TC_REF,TC_REF],hotTemp:[TH_REF,TH_REF,TH_REF,TH_REF]};
+  console.assert(Math.max(...normIdeal(refRun,t).map((v,i)=>Math.abs(v-idealCold(refRun,t)[i])))<1e-9,"run at reference temps: normIdeal == idealCold");
+  // uncertainty is always at least the gauge floor
+  console.assert(recommend("Bruck","x","","","",45).sigCold.every(s=>s>=SIG_FLOOR-1e-9),"sigCold >= floor");
   console.log("tlaky self-check passed");
 })();
 
