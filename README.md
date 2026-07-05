@@ -31,29 +31,32 @@ Example (Franciacorta): set `0.69` cold, measured `0.82` hot, target `0.80`
 "Teoreticky" numbers exactly — verified in the in-page self-check.
 
 The recommender:
-1. Builds a driver-agnostic **track base** = seed + every logged run on that track,
-   each normalised to a reference asphalt temp, then averaged.
-2. Adds the **driver offset** — how that driver consistently deviates from the base,
-   learned across *all* their runs (so their style carries across tracks).
+1. Builds a **track base** = seed + every logged run on that track, each normalised to a
+   reference asphalt temp, then a **recency-weighted** average (recent runs count more).
+2. Adds four **learned offsets** — how the **driver**, **kart class**, **tyre**, and
+   **weather** each deviate from that base, learned across *all* runs with that value.
 3. Adjusts for **today's asphalt temp** (hotter track → more rise → lower cold).
-4. Applies a small **driving-style** nudge.
 
-`recommendation = track base + driver offset − temp adj − style adj`
+`recommendation = track base + driver + kart + tyre + weather − temp adj`
 
-This is the "learning": no neural net, just a transparent running average that gets
-sharper every time you log a run. With ~20 data points that is the correct tool — a
+This is the "learning": no neural net, just transparent recency-weighted averages that get
+sharper every time you log a run. With a few dozen data points that is the correct tool — a
 model with more knobs would just fit noise.
 
-### Per-driver learning ("F1 style")
+### Factorised per-category learning ("F1 style")
 
-Drivers have consistent differences (a harder pusher heats tyres more → needs lower cold).
-The **driver offset** captures that as an additive, per-tyre adjustment vs the track base,
-**shrunk** toward zero until a few runs exist (`K_DRIVER`) so one run can't swing it. The
-seed numbers are Juro's own notes, so Juro ≈ baseline (offset ~0) and other drivers deviate
-from it. A brand-new driver gets the plain track base until they log runs. The model
-**converges**: with enough runs, each driver's recommendation lands on their own true ideal.
-The Recommend screen shows `base … · <driver> adj …` and the Data tab lists each driver's
-learned signature.
+Each category (driver, kart class, specific tyre, weather) gets its own **additive, per-tyre
+offset** vs the track base — kept *separate* rather than one giant table of every combination,
+because a joint table would need 100× the data. Each offset is **shrunk** toward zero until a
+few runs exist (`K_DRIVER`) so one run can't swing it, and **decayed** so recent runs dominate
+(`DECAY`). An unseen value (new driver, tyre never run) contributes zero → you get the plain
+track base until data arrives. The Recommend screen shows each chosen value's contribution;
+the Data tab lists every learned signature.
+
+**Caveat (documented in code):** because all four offsets are measured against the same base,
+two that always vary together (e.g. a class only ever run on one tyre) split that deviation
+between them — correct for combinations you've actually run, mildly off only for novel ones.
+A joint ridge fit is the upgrade path if data ever gets dense enough to need it.
 
 ## Per-tyre layout
 
@@ -80,9 +83,10 @@ defaults — tune them as real data shows whether recommendations over/undershoo
 |------|---------|---------|
 | `REF_TEMP` | `45` | Asphalt °C the seed base pressures assume |
 | `COEFF` | `0.004` | Bar of cold-pressure change per °C asphalt |
-| `STYLE` | `±0.02` | Bar nudge for chill / normal / push |
-| `K_DRIVER` | `2` | Shrinkage — a driver's offset is trusted only after a few runs |
-| `SEED_W` | `1` | Seed base counts as ~1 run, so real data overtakes it |
+| `K_DRIVER` | `2` | Shrinkage — any category's offset is trusted only after a few runs |
+| `SEED_W` | `1` | Seed base counts as ~1 (oldest) run, so real data overtakes it |
+| `DECAY` | `0.85` | Recency — each older run counts this much less; `1` = flat average (never forgets) |
+| `CLAMP_LO/HI` | `0.2 / 1.6` | A run whose implied cold lands outside this band (bar) is a typo → skipped |
 
 ## Seed data (from Juro's PDF notes)
 
@@ -111,12 +115,24 @@ firewall port: `sudo firewall-cmd --add-port=8000/tcp`.
 
 ---
 
+## Inputs and taxonomy
+
+Three setup variables feed the math, each a learned offset:
+
+- **Kart class** — Tillotson T4 (Bambino / Mini / Junior / Senior / Senior+) and
+  Rotax (Micro / Mini / Junior / Senior / DD2 / DD2 Master).
+- **Tyre** — MAXXIS and Mojo, brand → compound dropdowns grouped slick / wet. The
+  **cadet/mini classes** (T4 Bambino/Mini, Rotax Micro/Mini) show only their own
+  smaller-diameter compounds; every other class shows only the standard ones.
+- **Weather** — Dry / Damp / Wet.
+
 ## Deliberately left out (and when to add it)
 
-- **Weather, session length, tyre life, track condition** — logged but *not* in the math
-  yet. Add once there are enough runs to actually fit them.
-- **Driving style / track condition** — currently a manual ±0.02 nudge, not auto-learned.
-  Calibrate once runs are tagged with style.
+- **Per-weather target** — wet running often wants a *different* hot target, but for now
+  there's one target per track and the weather/tyre offsets absorb the difference. Split it
+  once enough wet runs exist. (Marked `ponytail:` in code.)
+- **Session length, tyre life, track condition, ambient** — logged but *not* in the math yet.
+  Fold in once there are enough runs to actually fit them.
 - **Unipro import** — manual entry for now.
 - **Edit a logged run** — you can only add or delete; no in-place edit yet.
 
@@ -145,7 +161,7 @@ Ordered by what actually turns this from a demo into a tool Juro uses every race
 
 ### 3. Sharpen the model (once data accumulates)
 - Fit the temp slope **per track / per tyre** instead of one global `COEFF`.
-- Bring **weather / track condition / style** into the math once enough runs are tagged.
+- Split the **hot target per weather** (wet wants a different target) once wet runs exist.
 - Show the **predicted hot pressure + expected error**, so Juro sees confidence, not just a number.
 
 ### 4. UX polish

@@ -44,13 +44,11 @@
   .tabs button{flex:1;background:none;color:var(--mut);min-height:62px;border-radius:0;font-size:12px;display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center}
   .tabs button.on{color:var(--acc)}
   .tabs .ic{font-size:20px}
-  .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
-  .seg button{flex:1;background:#0c0e12;color:var(--mut);border-radius:0;min-height:44px}
-  .seg button.on{background:var(--acc);color:#06121f}
   details summary{cursor:pointer;color:var(--mut);font-size:13px;margin:6px 0}
   .runrow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
   .runrow small{color:var(--mut)}
   h2{font-size:15px;margin:0 0 4px}
+  h3{font-size:13px;margin:14px 0 2px;color:var(--acc)}
   .hide{display:none}
   .muted{color:var(--mut)}
   .del{color:var(--bad);background:none;border:none;font-size:13px;padding:6px}
@@ -69,20 +67,22 @@
       <h2>What cold pressures to set</h2>
       <label>Track</label>
       <select id="rec-track"></select>
-      <div class="row">
-        <div><label>Driver</label>
-          <div style="display:flex;gap:6px">
-            <select id="rec-driver" style="flex:1"></select>
-            <button class="ghost" type="button" style="min-width:46px;flex:none" onclick="addDriver('rec-driver')">＋</button>
-          </div>
-        </div>
-        <div><label>Asphalt temp °C</label><input id="rec-asphalt" type="number" inputmode="decimal" placeholder="45"></div>
+      <label>Driver</label>
+      <div style="display:flex;gap:6px">
+        <select id="rec-driver" style="flex:1"></select>
+        <button class="ghost" type="button" style="min-width:46px;flex:none" onclick="addDriver('rec-driver')">＋</button>
       </div>
-      <label>Driving style</label>
-      <div class="seg" id="rec-style">
-        <button data-v="chill">Chill</button>
-        <button data-v="normal" class="on">Normal</button>
-        <button data-v="push">Push</button>
+      <div class="row">
+        <div><label>Kart</label><select id="rec-engine" onchange="fillClassSelect('rec')"></select></div>
+        <div><label>Class</label><select id="rec-class" onchange="fillCompoundSelect('rec')"></select></div>
+      </div>
+      <div class="row">
+        <div><label>Tyre</label><select id="rec-brand" onchange="fillCompoundSelect('rec')"></select></div>
+        <div><label>Compound</label><select id="rec-compound"></select></div>
+      </div>
+      <div class="row">
+        <div><label>Weather</label><select id="rec-weather"></select></div>
+        <div><label>Asphalt °C</label><input id="rec-asphalt" type="number" inputmode="decimal" placeholder="45"></div>
       </div>
       <div style="height:12px"></div>
       <button class="primary" onclick="doRecommend()">Recommend</button>
@@ -105,14 +105,22 @@
         <div><label>Track</label><select id="log-track"></select></div>
         <div><label>Date</label><input id="log-date" type="date"></div>
       </div>
+      <label>Driver</label>
+      <div style="display:flex;gap:6px">
+        <select id="log-driver" style="flex:1"></select>
+        <button class="ghost" type="button" style="min-width:46px;flex:none" onclick="addDriver('log-driver')">＋</button>
+      </div>
       <div class="row">
-        <div><label>Driver</label>
-          <div style="display:flex;gap:6px">
-            <select id="log-driver" style="flex:1"></select>
-            <button class="ghost" type="button" style="min-width:46px;flex:none" onclick="addDriver('log-driver')">＋</button>
-          </div>
-        </div>
-        <div><label>Asphalt temp °C</label><input id="log-asphalt" type="number" inputmode="decimal" placeholder="45"></div>
+        <div><label>Kart</label><select id="log-engine" onchange="fillClassSelect('log')"></select></div>
+        <div><label>Class</label><select id="log-class" onchange="fillCompoundSelect('log')"></select></div>
+      </div>
+      <div class="row">
+        <div><label>Tyre</label><select id="log-brand" onchange="fillCompoundSelect('log')"></select></div>
+        <div><label>Compound</label><select id="log-compound"></select></div>
+      </div>
+      <div class="row">
+        <div><label>Weather</label><select id="log-weather"></select></div>
+        <div><label>Asphalt °C</label><input id="log-asphalt" type="number" inputmode="decimal" placeholder="45"></div>
       </div>
 
       <label>Cold pressures (bar) — what you set</label>
@@ -137,15 +145,12 @@
           <div><label>Tyre temp before °C</label><input id="log-tyretemp" type="number" inputmode="decimal"></div>
         </div>
         <div class="row">
-          <div><label>Weather</label><input id="log-weather" placeholder="sun / cloudy / wet"></div>
           <div><label>Session min</label><input id="log-sesslen" type="number" inputmode="decimal"></div>
-        </div>
-        <div class="row">
           <div><label>Tyre life</label>
             <select id="log-tyrelife"><option value="">—</option><option>new</option><option>used</option><option>worn</option></select></div>
-          <div><label>Track condition</label>
-            <select id="log-cond"><option value="">—</option><option>green</option><option>rubbered</option><option>dirty</option></select></div>
         </div>
+        <label>Track condition</label>
+        <select id="log-cond"><option value="">—</option><option>green</option><option>rubbered</option><option>dirty</option></select>
       </details>
       <div style="height:12px"></div>
       <button class="primary" onclick="saveRun()">Save run</button>
@@ -164,9 +169,12 @@
       </div>
     </div>
     <div class="card">
-      <h2>Drivers</h2>
-      <p class="note">Each driver's learned adjustment vs the track base — this is the per-driver memory.</p>
-      <div id="drivers-list"></div>
+      <h2>Learned adjustments</h2>
+      <p class="note">How each driver / kart class / tyre / weather deviates from the track base — the app's memory. Recent runs count more.</p>
+      <h3>Drivers</h3><div id="drivers-list"></div>
+      <h3>Kart classes</h3><div id="karts-list"></div>
+      <h3>Tyres</h3><div id="tyres-list"></div>
+      <h3>Weather</h3><div id="weather-list"></div>
     </div>
     <div class="card">
       <h2>Logged runs (<span id="run-count">0</span>)</h2>
@@ -197,10 +205,36 @@
 // ---- model constants (calibration knobs — tune as real data arrives) ----
 const REF_TEMP = 45;        // °C asphalt that the seed "base" pressures assume
 const COEFF    = 0.004;     // bar of cold-pressure change per °C asphalt. ponytail: gentle default, raise if hot pressures over/undershoot with temp
-const STYLE    = {chill:-0.02, normal:0, push:0.02}; // bar nudge; push=lower cold (more heat). ponytail: knob, refine with data
-const K_DRIVER = 2;         // shrinkage: a driver's offset is trusted only after a few runs. ponytail: knob
-const SEED_W   = 1;         // seed base counts as ~one run, so real data overtakes it. ponytail
+const K_DRIVER = 2;         // trust: a category's offset is shrunk toward 0 until a few runs exist (n/(n+K)). ponytail: knob
+const SEED_W   = 1;         // seed base counts as ~one (oldest) run, so real data overtakes it. ponytail
+const DECAY    = 0.85;      // recency: each older run counts DECAY× less than the next. 1 = flat average (never forgets), lower = adapts faster but twitchier. ponytail: knob
+const CLAMP_LO = 0.2, CLAMP_HI = 1.6; // a run whose implied ideal cold lands outside this band (bar) is a data-entry error — skipped, not learned from. ponytail: widen if legit wet runs get dropped
 const POS = ["Front L","Front R","Rear L","Rear R"];
+
+// ---- taxonomy: kart classes and tyres (from Juro) ----
+const KARTS = {
+  "Tillotson T4": ["Bambino","Mini","Junior","Senior","Senior+"],
+  "Rotax":        ["Micro","Mini","Junior","Senior","DD2","DD2 Master"]
+};
+// small (cadet/mini) classes run their own smaller-diameter tyres; every other class runs the standard ones
+const SMALL_CLASSES = ["Tillotson T4 Bambino","Tillotson T4 Mini","Rotax Micro","Rotax Mini"];
+// tyres: brand -> compounds. wet:1 = rain tyre, small:1 = only for the cadet/mini classes above
+const TYRES = {
+  "MAXXIS": [
+    {n:"T4 Slick"}, {n:"Prime"}, {n:"Option"}, {n:"Evo"}, {n:"Super Sport"}, {n:"Sport"},
+    {n:"T4 Rain", wet:1}, {n:"Wet", wet:1},
+    {n:"T4 Slick Mini", small:1}, {n:"Rookie", small:1}, {n:"Mini", small:1}, {n:"Mini Wet", wet:1, small:1}
+  ],
+  "Mojo": [
+    {n:"D5"}, {n:"D2"}, {n:"W5", wet:1},
+    {n:"C2", small:1}, {n:"CW", wet:1, small:1}
+  ]
+};
+const WEATHER = ["Dry","Damp","Wet"];
+function compoundsFor(brand, kartLbl){
+  const small = SMALL_CLASSES.includes(kartLbl);
+  return (TYRES[brand]||[]).filter(t => !!t.small === small);
+}
 
 // ---- seed: bases are [FL,FR,RL,RR] cold pressures (bar) at REF_TEMP, from Juro's PDF notes ----
 const SEED = {
@@ -222,10 +256,15 @@ function load(){
   try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s&&s.tracks){ migrate(s); return s; } }catch(e){}
   return JSON.parse(JSON.stringify(SEED));
 }
-function migrate(s){ // backward-compat for backups saved before drivers existed
+function migrate(s){ // backward-compat: old runs keep working, just untagged on the new dimensions
   if(!Array.isArray(s.drivers)){
     const set=[...new Set((s.runs||[]).map(r=>r.driver).filter(Boolean))];
     s.drivers = set.length?set:["Juro"];
+  }
+  for(const r of (s.runs||[])){ // "" = untagged: still feeds the track base, just no offset for that dimension
+    if(r.kart==null)    r.kart="";
+    if(r.tyre==null)    r.tyre = r.brand || ""; // pre-taxonomy "brand" field folds into tyre
+    if(r.weather==null || typeof r.weather!=="string" || !WEATHER.includes(r.weather)) r.weather="";
   }
 }
 function save(){ localStorage.setItem(KEY, JSON.stringify(STATE)); }
@@ -242,76 +281,87 @@ function normIdeal(run, target){
   const ic = idealCold(run, target);
   return (run.asphalt!=null) ? ic.map(v=> v + COEFF*(run.asphalt-REF_TEMP)) : ic;
 }
-// driver-agnostic best cold setup for a track, at REF_TEMP
+// a run is only trusted if its implied cold is physically sane (guards fat-finger entries)
+function plausible(ni){ return ni.every(v=> v>=CLAMP_LO && v<=CLAMP_HI); }
+// recency weight: newest run (last in list) = 1, each older one DECAY× less
+function decayW(i, n){ return Math.pow(DECAY, n-1-i); }
+
+// driver-agnostic best cold setup for a track, at REF_TEMP (recency-weighted, outliers skipped)
 function trackBase(track){
   const t = STATE.tracks[track]; if(!t) return null;
+  const runs = STATE.runs.filter(r=>r.track===track);
   let sum=[0,0,0,0], w=0, real=0;
-  if(t.base){ for(let i=0;i<4;i++) sum[i]+=t.base[i]*SEED_W; w+=SEED_W; } // seed prior
-  for(const run of STATE.runs){
-    if(run.track!==track) continue;
-    real++;
+  runs.forEach((run,i)=>{
     const ni = normIdeal(run, t.target);
-    for(let i=0;i<4;i++) sum[i]+=ni[i];
-    w++;
-  }
+    if(!plausible(ni)) return;
+    const wt = decayW(i, runs.length);
+    for(let k=0;k<4;k++) sum[k]+=ni[k]*wt; w+=wt; real++;
+  });
+  if(t.base){ const wt = SEED_W*Math.pow(DECAY, runs.length); for(let k=0;k<4;k++) sum[k]+=t.base[k]*wt; w+=wt; } // seed = oldest run
   if(w===0) return null;
   return { base:sum.map(s=>s/w), target:t.target, real };
 }
-// how a driver consistently deviates from the generic track base (shrunk toward 0)
-// ponytail: O(runs^2) via trackBase-per-run; runs are tiny
-function driverOffset(driver){
-  if(!driver) return { offset:[0,0,0,0], n:0 };
-  const d = driver.toLowerCase();
-  let sum=[0,0,0,0], n=0;
-  for(const run of STATE.runs){
-    if(!run.driver || run.driver.toLowerCase()!==d) continue;
-    const tb = trackBase(run.track); if(!tb) continue;
-    const ni = normIdeal(run, STATE.tracks[run.track].target);
-    for(let i=0;i<4;i++) sum[i]+= ni[i]-tb.base[i];
-    n++;
-  }
+// how a category value (a driver / kart / tyre / weather) deviates from the generic track base
+// ponytail: O(runs^2) via trackBase-per-run; runs are tiny.
+// ponytail: driver+kart+tyre+weather offsets are all measured vs the same base → if two of them always vary
+//   together (e.g. one class only ever on one tyre) their offsets split that run's deviation; the SUM is right
+//   for seen combos, only novel combos drift. Negligible at this data volume; a joint ridge fit is the upgrade path.
+function catOffset(field, value){
+  if(!value) return { offset:[0,0,0,0], n:0 };
+  const v = value.toLowerCase();
+  const runs = STATE.runs.filter(r=> (r[field]||"").toLowerCase()===v);
+  let sum=[0,0,0,0], w=0, n=0;
+  runs.forEach((run,i)=>{
+    const t = STATE.tracks[run.track]; const tb = trackBase(run.track); if(!t||!tb) return;
+    const ni = normIdeal(run, t.target);
+    if(!plausible(ni)) return;
+    const wt = decayW(i, runs.length);
+    for(let k=0;k<4;k++) sum[k]+= (ni[k]-tb.base[k])*wt; w+=wt; n++;
+  });
   if(n===0) return { offset:[0,0,0,0], n:0 };
-  const shrink = n/(n+K_DRIVER);
-  return { offset:sum.map(s=>(s/n)*shrink), n };
+  const shrink = n/(n+K_DRIVER); // trust grows with the COUNT of runs; decay handles recency separately
+  return { offset:sum.map(s=>(s/w)*shrink), n };
 }
-function recommend(track, driver, asphalt, style){
+
+function recommend(track, driver, kart, tyre, weather, asphalt){
   const tb = trackBase(track); if(!tb) return null;
-  const off = driverOffset(driver);
+  const off = { driver:catOffset("driver",driver), kart:catOffset("kart",kart),
+                tyre:catOffset("tyre",tyre), weather:catOffset("weather",weather) };
   const a = (asphalt!=null)?asphalt:REF_TEMP;
-  const sd = STYLE[style]||0;
-  const cold = tb.base.map((v,i)=> r2(v + off.offset[i] - COEFF*(a-REF_TEMP) - sd));
-  return { cold, base:tb.base.map(r2), offset:off.offset.map(r2), target:tb.target,
-           real:tb.real, driverN:off.n, asphalt:a, usedDefaultTemp:(asphalt==null), driver };
+  const cold = tb.base.map((v,i)=> r2(
+     v + off.driver.offset[i] + off.kart.offset[i] + off.tyre.offset[i] + off.weather.offset[i] - COEFF*(a-REF_TEMP)));
+  return { cold, base:tb.base.map(r2), off, target:tb.target, real:tb.real,
+           asphalt:a, usedDefaultTemp:(asphalt==null) };
 }
 
-// ---- UI ----
-function showTab(name){
-  for(const t of ["rec","log","data"]){
-    document.getElementById("tab-"+t).classList.toggle("hide", t!==name);
-  }
-  document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on", b.dataset.tab===name));
-  if(name==="data") renderData();
+// ---- UI: selects ----
+function fillSelect(id, arr){
+  const sel=document.getElementById(id); if(!sel) return; const cur=sel.value;
+  sel.innerHTML = arr.map(x=>`<option>${x}</option>`).join("");
+  if(arr.includes(cur)) sel.value=cur;
 }
-
-let recStyle="normal";
-document.querySelectorAll("#rec-style button").forEach(b=>{
-  b.onclick=()=>{ recStyle=b.dataset.v; document.querySelectorAll("#rec-style button").forEach(x=>x.classList.toggle("on",x===b)); };
-});
-
-function fillTrackSelects(){
-  const names = Object.keys(STATE.tracks);
-  for(const id of ["rec-track","log-track"]){
-    const sel=document.getElementById(id); const cur=sel.value;
-    sel.innerHTML = names.map(n=>`<option>${n}</option>`).join("");
-    if(names.includes(cur)) sel.value=cur;
-  }
-  fillDriverSelects();
+function fillTrackSelects(){ for(const id of ["rec-track","log-track"]) fillSelect(id, Object.keys(STATE.tracks)); }
+function fillDriverSelects(){ for(const id of ["rec-driver","log-driver"]) fillSelect(id, STATE.drivers); }
+function fillWeatherSelects(){ for(const id of ["rec-weather","log-weather"]) fillSelect(id, WEATHER); }
+function kartLabel(p){ return document.getElementById(p+"-engine").value+" "+document.getElementById(p+"-class").value; }
+function tyreLabel(p){ return document.getElementById(p+"-brand").value+" "+document.getElementById(p+"-compound").value; }
+function fillClassSelect(p){ // engine changed -> repopulate class, then compound
+  fillSelect(p+"-class", KARTS[document.getElementById(p+"-engine").value]||[]);
+  fillCompoundSelect(p);
 }
-function fillDriverSelects(){
-  for(const id of ["rec-driver","log-driver"]){
-    const sel=document.getElementById(id); const cur=sel.value;
-    sel.innerHTML = STATE.drivers.map(d=>`<option>${d}</option>`).join("");
-    if(STATE.drivers.includes(cur)) sel.value=cur;
+function fillCompoundSelect(p){ // brand or class changed -> repopulate compound, grouped slick/wet
+  const list = compoundsFor(document.getElementById(p+"-brand").value, kartLabel(p));
+  const grp = (lbl,items)=> items.length? `<optgroup label="${lbl}">`+items.map(t=>`<option>${t.n}</option>`).join("")+`</optgroup>` : "";
+  const sel = document.getElementById(p+"-compound"); const cur=sel.value;
+  sel.innerHTML = grp("Slick", list.filter(t=>!t.wet)) + grp("Wet", list.filter(t=>t.wet));
+  if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+}
+function fillAll(){
+  fillTrackSelects(); fillDriverSelects(); fillWeatherSelects();
+  for(const p of ["rec","log"]){
+    fillSelect(p+"-engine", Object.keys(KARTS));
+    fillSelect(p+"-brand",  Object.keys(TYRES));
+    fillClassSelect(p); // -> class + compound
   }
 }
 function addDriver(selId){
@@ -322,15 +372,22 @@ function addDriver(selId){
   renderData();
 }
 
+function showTab(name){
+  for(const t of ["rec","log","data"]) document.getElementById("tab-"+t).classList.toggle("hide", t!==name);
+  document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on", b.dataset.tab===name));
+  if(name==="data") renderData();
+}
+
+// ---- UI: recommend ----
 function doRecommend(){
   const track=document.getElementById("rec-track").value;
   const driver=document.getElementById("rec-driver").value.trim();
-  const asphalt=num("rec-asphalt");
-  const rec=recommend(track,driver,asphalt,recStyle);
+  const kart=kartLabel("rec"), tyre=tyreLabel("rec"), weather=document.getElementById("rec-weather").value;
+  const rec=recommend(track,driver,kart,tyre,weather,num("rec-asphalt"));
   const out=document.getElementById("rec-out");
   if(!rec){ out.classList.remove("hide");
     document.getElementById("rec-kart").innerHTML="";
-    document.getElementById("rec-breakdown").textContent="";
+    document.getElementById("rec-breakdown").innerHTML="";
     document.getElementById("rec-target").textContent="no data yet";
     document.getElementById("rec-conf").textContent="";
     document.getElementById("rec-explain").textContent="No base or runs for this track. Log a run first.";
@@ -340,16 +397,18 @@ function doRecommend(){
   const fmtS=a=>a.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("/");
   out.classList.remove("hide");
   document.getElementById("rec-target").textContent="target "+rec.target.toFixed(2)+" bar";
-  document.getElementById("rec-conf").textContent =
-     rec.driverN ? `${driver}: ${rec.driverN} run${rec.driverN>1?"s":""} learned`
-                 : (driver? `${driver}: new — track base only` : "track base");
+  const dn=rec.off.driver.n;
+  document.getElementById("rec-conf").textContent = dn? `${driver}: ${dn} run${dn>1?"s":""} learned` : (driver?`${driver}: new`:"track base");
   document.getElementById("rec-kart").innerHTML = rec.cold.map((v,i)=>
      `<div><div class="pos">${POS[i]}</div><div class="big">${v.toFixed(2)}</div></div>`).join("");
-  document.getElementById("rec-breakdown").textContent =
-     `base ${fmt(rec.base)}  ·  ${driver||"driver"} adj ${fmtS(rec.offset)}`;
+  // per-dimension contribution line (only the ones actually chosen)
+  const dims=[[driver,rec.off.driver],[kart,rec.off.kart],[tyre,rec.off.tyre],[weather,rec.off.weather]]
+    .filter(([v])=>v && v.trim())
+    .map(([v,o])=> `${v}: ${o.n? `${o.n}× ${fmtS(o.offset)}` : "new"}`);
+  document.getElementById("rec-breakdown").innerHTML = `base ${fmt(rec.base)}<br>`+dims.join(" · ");
   let ex=`Set these cold to land near ${rec.target.toFixed(2)} bar hot at ${rec.asphalt.toFixed(0)}°C asphalt`;
   if(rec.usedDefaultTemp) ex+=` (no temp entered → assumed ${REF_TEMP}°C)`;
-  ex+=`. Style: ${recStyle}. Track base from ${rec.real} run${rec.real===1?"":"s"}+seed.`;
+  ex+=`. Track base from ${rec.real} run${rec.real===1?"":"s"}+seed.`;
   document.getElementById("rec-explain").textContent=ex;
 }
 
@@ -357,11 +416,20 @@ function prefillLog(){
   showTab("log");
   document.getElementById("log-track").value=document.getElementById("rec-track").value;
   document.getElementById("log-driver").value=document.getElementById("rec-driver").value;
+  // kart: set engine, repopulate class, then set class
+  document.getElementById("log-engine").value=document.getElementById("rec-engine").value; fillClassSelect("log");
+  document.getElementById("log-class").value=document.getElementById("rec-class").value;
+  // tyre: set brand, repopulate compound (depends on brand + class), then set compound
+  document.getElementById("log-brand").value=document.getElementById("rec-brand").value; fillCompoundSelect("log");
+  document.getElementById("log-compound").value=document.getElementById("rec-compound").value;
+  document.getElementById("log-weather").value=document.getElementById("rec-weather").value;
   document.getElementById("log-asphalt").value=document.getElementById("rec-asphalt").value;
-  const rec=recommend(document.getElementById("rec-track").value,document.getElementById("rec-driver").value.trim(),num("rec-asphalt"),recStyle);
+  const rec=recommend(document.getElementById("rec-track").value,document.getElementById("rec-driver").value.trim(),
+                      kartLabel("rec"),tyreLabel("rec"),document.getElementById("rec-weather").value,num("rec-asphalt"));
   if(rec) rec.cold.forEach((v,i)=> document.getElementById("c"+i).value=v.toFixed(2));
 }
 
+// ---- UI: log ----
 function saveRun(){
   const cold=[0,1,2,3].map(i=>num("c"+i));
   const hot =[0,1,2,3].map(i=>num("h"+i));
@@ -371,48 +439,60 @@ function saveRun(){
     date:document.getElementById("log-date").value,
     track:document.getElementById("log-track").value,
     driver:document.getElementById("log-driver").value.trim()||"Juro",
+    kart:kartLabel("log"),
+    tyre:tyreLabel("log"),
+    weather:document.getElementById("log-weather").value,
     asphalt:num("log-asphalt"),
     cold,hot,
     ambient:num("log-ambient"), tyreTemp:num("log-tyretemp"),
-    weather:document.getElementById("log-weather").value.trim(),
     sessLen:num("log-sesslen"),
     tyreLife:document.getElementById("log-tyrelife").value,
     cond:document.getElementById("log-cond").value
   };
   STATE.runs.push(run); save();
-  ["c0","c1","c2","c3","h0","h1","h2","h3","log-ambient","log-tyretemp","log-weather","log-sesslen"].forEach(id=>document.getElementById(id).value="");
-  fillTrackSelects();
+  ["c0","c1","c2","c3","h0","h1","h2","h3","log-ambient","log-tyretemp","log-sesslen"].forEach(id=>document.getElementById(id).value="");
+  fillAll();
   alert("Saved. The recommender for "+run.track+" just got sharper.");
   showTab("rec");
 }
 
+// ---- UI: data ----
+function distinct(field){ return [...new Set(STATE.runs.map(r=>r[field]).filter(Boolean))]; }
+function renderOffsetList(id, field, values){
+  const el=document.getElementById(id);
+  if(!values.length){ el.innerHTML=`<p class="muted">nothing logged yet</p>`; return; }
+  el.innerHTML = values.map(name=>{
+    const o=catOffset(field,name);
+    const sig=o.n? o.offset.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("/") : null;
+    return `<div class="runrow"><div><b>${name}</b><br><small>${o.n? `${o.n} run${o.n>1?"s":""} · adj ${sig}`:"uses track base"}</small></div></div>`;
+  }).join("");
+}
 function renderData(){
   const tl=document.getElementById("tracks-list");
   tl.innerHTML=Object.entries(STATE.tracks).map(([name,t])=>{
-    const b=baseFor(name,"");
+    const b=trackBase(name);
     const baseStr=b? b.base.map(v=>v.toFixed(2)).join(" / ") : "—";
     return `<div class="runrow"><div><b>${name}</b><br><small>base ${baseStr}${b&&b.real?` · ${b.real} runs`:" · seed only"}</small></div>
       <div style="text-align:right">target<br>
       <input style="width:80px;text-align:center" type="number" step="0.01" value="${t.target}" onchange="setTarget('${name.replace(/'/g,"\\'")}',this.value)"></div></div>`;
   }).join("");
-  const dv=document.getElementById("drivers-list");
-  dv.innerHTML = STATE.drivers.map(name=>{
-    const o=driverOffset(name);
-    const sig=o.n? o.offset.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("/") : null;
-    return `<div class="runrow"><div><b>${name}</b><br><small>${o.n? `${o.n} run${o.n>1?"s":""} · adj ${sig}`:"no runs yet · uses track base"}</small></div></div>`;
-  }).join("");
+  renderOffsetList("drivers-list","driver", STATE.drivers);
+  renderOffsetList("karts-list",  "kart",   distinct("kart"));
+  renderOffsetList("tyres-list",  "tyre",   distinct("tyre"));
+  renderOffsetList("weather-list","weather",distinct("weather"));
   const rl=document.getElementById("runs-list");
   document.getElementById("run-count").textContent=STATE.runs.length;
-  rl.innerHTML = STATE.runs.length? STATE.runs.slice().reverse().map(r=>
-    `<div class="runrow"><div>${r.track} <small>${r.driver}${r.asphalt!=null?` · ${r.asphalt}°C`:""}</small><br>
+  rl.innerHTML = STATE.runs.length? STATE.runs.slice().reverse().map(r=>{
+    const tags=[r.driver,r.kart,r.tyre,r.weather,r.asphalt!=null?`${r.asphalt}°C`:""].filter(Boolean).join(" · ");
+    return `<div class="runrow"><div>${r.track} <small>${tags}</small><br>
       <small>cold ${r.cold.map(v=>v.toFixed(2)).join("/")} → hot ${r.hot.map(v=>v.toFixed(2)).join("/")}</small></div>
-      <button class="del" onclick="delRun('${r.id}')">delete</button></div>`).join("")
-    : `<p class="muted">No runs logged yet.</p>`;
+      <button class="del" onclick="delRun('${r.id}')">delete</button></div>`;
+  }).join("") : `<p class="muted">No runs logged yet.</p>`;
 }
 function setTarget(name,v){ const x=parseFloat(v); if(!isNaN(x)){ STATE.tracks[name].target=x; save(); } }
 function addTrack(){ const n=document.getElementById("new-track").value.trim(); if(!n)return;
-  if(!STATE.tracks[n]) STATE.tracks[n]={target:0.80,base:null}; save(); document.getElementById("new-track").value=""; fillTrackSelects(); renderData(); }
-function delRun(id){ STATE.runs=STATE.runs.filter(r=>r.id!==id); save(); fillTrackSelects(); renderData(); }
+  if(!STATE.tracks[n]) STATE.tracks[n]={target:0.80,base:null}; save(); document.getElementById("new-track").value=""; fillAll(); renderData(); }
+function delRun(id){ STATE.runs=STATE.runs.filter(r=>r.id!==id); save(); fillAll(); renderData(); }
 
 function exportData(){
   const blob=new Blob([JSON.stringify(STATE,null,2)],{type:"application/json"});
@@ -422,16 +502,15 @@ function exportData(){
 function importData(ev){
   const f=ev.target.files[0]; if(!f)return;
   const rd=new FileReader();
-  rd.onload=()=>{ try{ const s=JSON.parse(rd.result); if(!s.tracks)throw 0; migrate(s); STATE=s; save(); fillTrackSelects(); renderData(); alert("Imported."); }
+  rd.onload=()=>{ try{ const s=JSON.parse(rd.result); if(!s.tracks)throw 0; migrate(s); STATE=s; save(); fillAll(); renderData(); alert("Imported."); }
     catch(e){ alert("Bad file."); } };
   rd.readAsText(f);
 }
-function resetData(){ if(confirm("Wipe all runs and reset to seed data?")){ STATE=JSON.parse(JSON.stringify(SEED)); save(); fillTrackSelects(); renderData(); } }
+function resetData(){ if(confirm("Wipe all runs and reset to seed data?")){ STATE=JSON.parse(JSON.stringify(SEED)); save(); fillAll(); renderData(); } }
 
 // init
-document.getElementById("log-date").value=new Date? "" : ""; // date left blank intentionally (Date.now ok in browser)
 try{ document.getElementById("log-date").valueAsDate=new Date(); }catch(e){}
-fillTrackSelects();
+fillAll();
 
 // ---- self-check (console): the math must reproduce Juro's own "Teoreticky" numbers ----
 (function selfCheck(){
@@ -440,12 +519,14 @@ fillTrackSelects();
   console.assert(JSON.stringify(ic)===JSON.stringify([0.67,0.71,0.66,0.69]),
     "idealCold should match Franciacorta Teoreticky 67-71/66-69, got",ic);
   // hotter asphalt -> lower recommended cold
-  const cool=recommend("Bruck","x",30,"normal").cold[0];
-  const hot =recommend("Bruck","x",60,"normal").cold[0];
-  console.assert(hot<cool,"hotter asphalt must lower cold",cool,hot);
-  console.assert(driverOffset("__none__").n===0,"unknown driver offset must be empty");
-  const e1=recommend("Bruck","",45,"normal").cold, e2=recommend("Bruck","__none__",45,"normal").cold;
-  console.assert(JSON.stringify(e1)===JSON.stringify(e2),"unknown driver must equal zero-offset base");
+  console.assert(recommend("Bruck","x","","","",60).cold[0] < recommend("Bruck","x","","","",30).cold[0],
+    "hotter asphalt must lower cold");
+  // unknown category values contribute nothing → recommendation equals the plain base
+  console.assert(catOffset("driver","__none__").n===0,"unknown category must be empty");
+  const a=recommend("Bruck","","","","",45).cold, b=recommend("Bruck","z","z z","z z","z",45).cold;
+  console.assert(JSON.stringify(a)===JSON.stringify(b),"unknown offsets must equal zero-offset base");
+  // outlier clamp rejects a physically impossible entry (0.8 hot typed as 8.0)
+  console.assert(!plausible(normIdeal({cold:[.62,.64,.61,.66],hot:[8,8,8,8],asphalt:45},t)),"clamp must reject fat-finger");
   console.log("tlaky self-check passed");
 })();
 
