@@ -36,6 +36,8 @@
   /* kart 2x2 layout */
   .kart{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0}
   .kart .pos{font-size:11px;color:var(--mut);margin-bottom:2px}
+  .kart input+input{margin-top:6px}
+  .temp{color:var(--mut);font-size:14px}
   .big{font-size:30px;font-weight:700;text-align:center;padding:14px 4px;background:#0c0e12;border-radius:12px;border:1px solid var(--line)}
   .big small{display:block;font-size:11px;color:var(--mut);font-weight:400}
   .pill{display:inline-block;font-size:12px;padding:3px 9px;border-radius:999px;background:#0c0e12;border:1px solid var(--line);color:var(--mut)}
@@ -99,7 +101,8 @@
   <!-- ============ LOG ============ -->
   <section id="tab-log" class="hide">
     <div class="card">
-      <h2>Log a run</h2>
+      <h2 id="log-title">Log a run</h2>
+      <div class="note hide" id="edit-banner" style="color:var(--warn)">✎ Editing a saved run — Save updates it in place. Double-check kart / tyre / weather are right. <a href="#" style="color:var(--acc)" onclick="cancelEdit();return false">cancel</a></div>
       <p class="note">Enter what you set (cold) and what you measured after (hot). This is what teaches the app.</p>
       <div class="row">
         <div><label>Track</label><select id="log-track"></select></div>
@@ -123,34 +126,33 @@
         <div><label>Asphalt °C</label><input id="log-asphalt" type="number" inputmode="decimal" placeholder="45"></div>
       </div>
 
-      <label>Cold pressures (bar) — what you set</label>
+      <label>Cold — pressure (bar) + tyre temp (°C) you set</label>
       <div class="kart">
-        <div><div class="pos">Front L</div><input id="c0" type="number" inputmode="decimal" step="0.01" placeholder="0.65"></div>
-        <div><div class="pos">Front R</div><input id="c1" type="number" inputmode="decimal" step="0.01" placeholder="0.65"></div>
-        <div><div class="pos">Rear L</div><input id="c2" type="number" inputmode="decimal" step="0.01" placeholder="0.62"></div>
-        <div><div class="pos">Rear R</div><input id="c3" type="number" inputmode="decimal" step="0.01" placeholder="0.62"></div>
+        <div><div class="pos">Front L</div><input id="c0" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ct0" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
+        <div><div class="pos">Front R</div><input id="c1" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ct1" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
+        <div><div class="pos">Rear L</div><input id="c2" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ct2" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
+        <div><div class="pos">Rear R</div><input id="c3" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ct3" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
       </div>
-      <label>Hot pressures (bar) — measured right after</label>
+      <label>Hot — pressure (bar) + tyre temp (°C) measured right after</label>
       <div class="kart">
-        <div><div class="pos">Front L</div><input id="h0" type="number" inputmode="decimal" step="0.01" placeholder="0.80"></div>
-        <div><div class="pos">Front R</div><input id="h1" type="number" inputmode="decimal" step="0.01" placeholder="0.80"></div>
-        <div><div class="pos">Rear L</div><input id="h2" type="number" inputmode="decimal" step="0.01" placeholder="0.80"></div>
-        <div><div class="pos">Rear R</div><input id="h3" type="number" inputmode="decimal" step="0.01" placeholder="0.80"></div>
+        <div><div class="pos">Front L</div><input id="h0" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ht0" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
+        <div><div class="pos">Front R</div><input id="h1" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ht1" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
+        <div><div class="pos">Rear L</div><input id="h2" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ht2" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
+        <div><div class="pos">Rear R</div><input id="h3" type="number" inputmode="decimal" step="0.01" placeholder="bar"><input id="ht3" class="temp" type="number" inputmode="decimal" step="1" placeholder="°C"></div>
       </div>
 
       <details>
         <summary>More (optional — logged for later, not used in the math yet)</summary>
         <div class="row">
           <div><label>Ambient °C</label><input id="log-ambient" type="number" inputmode="decimal"></div>
-          <div><label>Tyre temp before °C</label><input id="log-tyretemp" type="number" inputmode="decimal"></div>
+          <div><label>Session min</label><input id="log-sesslen" type="number" inputmode="decimal"></div>
         </div>
         <div class="row">
-          <div><label>Session min</label><input id="log-sesslen" type="number" inputmode="decimal"></div>
           <div><label>Tyre life</label>
             <select id="log-tyrelife"><option value="">—</option><option>new</option><option>used</option><option>worn</option></select></div>
+          <div><label>Track condition</label>
+            <select id="log-cond"><option value="">—</option><option>green</option><option>rubbered</option><option>dirty</option></select></div>
         </div>
-        <label>Track condition</label>
-        <select id="log-cond"><option value="">—</option><option>green</option><option>rubbered</option><option>dirty</option></select>
       </details>
       <div style="height:12px"></div>
       <button class="primary" onclick="saveRun()">Save run</button>
@@ -356,6 +358,20 @@ function fillCompoundSelect(p){ // brand or class changed -> repopulate compound
   sel.innerHTML = grp("Slick", list.filter(t=>!t.wet)) + grp("Wet", list.filter(t=>t.wet));
   if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
 }
+// set the dependent kart/tyre dropdowns from a stored combined label ("Rotax Senior", "MAXXIS Prime")
+function setKart(p, label){
+  const eng = Object.keys(KARTS).find(e => label===e || (label||"").startsWith(e+" ")) || Object.keys(KARTS)[0];
+  document.getElementById(p+"-engine").value=eng; fillClassSelect(p);
+  const cls=(label||"").slice(eng.length).trim();
+  if((KARTS[eng]||[]).includes(cls)) document.getElementById(p+"-class").value=cls;
+  fillCompoundSelect(p);
+}
+function setTyre(p, label){
+  const br = Object.keys(TYRES).find(b => label===b || (label||"").startsWith(b+" ")) || Object.keys(TYRES)[0];
+  document.getElementById(p+"-brand").value=br; fillCompoundSelect(p);
+  const comp=(label||"").slice(br.length).trim();
+  if([...document.getElementById(p+"-compound").options].some(o=>o.value===comp)) document.getElementById(p+"-compound").value=comp;
+}
 function fillAll(){
   fillTrackSelects(); fillDriverSelects(); fillWeatherSelects();
   for(const p of ["rec","log"]){
@@ -413,7 +429,7 @@ function doRecommend(){
 }
 
 function prefillLog(){
-  showTab("log");
+  cancelEdit(); showTab("log");
   document.getElementById("log-track").value=document.getElementById("rec-track").value;
   document.getElementById("log-driver").value=document.getElementById("rec-driver").value;
   // kart: set engine, repopulate class, then set class
@@ -430,12 +446,12 @@ function prefillLog(){
 }
 
 // ---- UI: log ----
+let editId=null; // id of the run being edited, else null (new run)
 function saveRun(){
   const cold=[0,1,2,3].map(i=>num("c"+i));
   const hot =[0,1,2,3].map(i=>num("h"+i));
   if(cold.some(v=>v==null)||hot.some(v=>v==null)){ alert("Fill all 4 cold and 4 hot pressures."); return; }
-  const run={
-    id:Date.now()+"-"+STATE.runs.length,
+  const data={
     date:document.getElementById("log-date").value,
     track:document.getElementById("log-track").value,
     driver:document.getElementById("log-driver").value.trim()||"Juro",
@@ -443,17 +459,53 @@ function saveRun(){
     tyre:tyreLabel("log"),
     weather:document.getElementById("log-weather").value,
     asphalt:num("log-asphalt"),
-    cold,hot,
-    ambient:num("log-ambient"), tyreTemp:num("log-tyretemp"),
+    cold, hot,
+    coldTemp:[0,1,2,3].map(i=>num("ct"+i)), // optional per-tyre temps; null when blank, logged not yet in the math
+    hotTemp: [0,1,2,3].map(i=>num("ht"+i)),
+    ambient:num("log-ambient"),
     sessLen:num("log-sesslen"),
     tyreLife:document.getElementById("log-tyrelife").value,
     cond:document.getElementById("log-cond").value
   };
-  STATE.runs.push(run); save();
-  ["c0","c1","c2","c3","h0","h1","h2","h3","log-ambient","log-tyretemp","log-sesslen"].forEach(id=>document.getElementById(id).value="");
+  const track=data.track;
+  if(editId){ const r=STATE.runs.find(x=>x.id===editId); if(r) Object.assign(r,data); cancelEdit(); }
+  else { STATE.runs.push({ id:Date.now()+"-"+STATE.runs.length, ...data }); }
+  save();
+  ["c0","c1","c2","c3","h0","h1","h2","h3","ct0","ct1","ct2","ct3","ht0","ht1","ht2","ht3","log-ambient","log-sesslen"].forEach(id=>document.getElementById(id).value="");
   fillAll();
-  alert("Saved. The recommender for "+run.track+" just got sharper.");
+  alert("Saved. The recommender for "+track+" just got sharper.");
   showTab("rec");
+}
+function cancelEdit(){
+  editId=null;
+  document.getElementById("edit-banner").classList.add("hide");
+  document.getElementById("log-title").textContent="Log a run";
+  document.querySelector("#tab-log button.primary").textContent="Save run";
+}
+function editRun(id){
+  const r=STATE.runs.find(x=>x.id===id); if(!r) return;
+  editId=id;
+  document.getElementById("log-track").value=r.track;
+  document.getElementById("log-date").value=r.date||"";
+  if(r.driver && !STATE.drivers.some(d=>d.toLowerCase()===r.driver.toLowerCase())) STATE.drivers.push(r.driver);
+  fillDriverSelects(); document.getElementById("log-driver").value=r.driver||"Juro";
+  setKart("log", r.kart); setTyre("log", r.tyre);
+  document.getElementById("log-weather").value = WEATHER.includes(r.weather)? r.weather : WEATHER[0];
+  document.getElementById("log-asphalt").value = r.asphalt!=null? r.asphalt : "";
+  for(let i=0;i<4;i++){
+    document.getElementById("c"+i).value  = r.cold[i]!=null? r.cold[i] : "";
+    document.getElementById("h"+i).value  = r.hot[i]!=null? r.hot[i] : "";
+    document.getElementById("ct"+i).value = (r.coldTemp&&r.coldTemp[i]!=null)? r.coldTemp[i] : "";
+    document.getElementById("ht"+i).value = (r.hotTemp&&r.hotTemp[i]!=null)? r.hotTemp[i] : "";
+  }
+  document.getElementById("log-ambient").value  = r.ambient!=null? r.ambient : "";
+  document.getElementById("log-sesslen").value  = r.sessLen!=null? r.sessLen : "";
+  document.getElementById("log-tyrelife").value = r.tyreLife||"";
+  document.getElementById("log-cond").value     = r.cond||"";
+  document.getElementById("edit-banner").classList.remove("hide");
+  document.getElementById("log-title").textContent="Edit run";
+  document.querySelector("#tab-log button.primary").textContent="Update run";
+  showTab("log"); window.scrollTo(0,0);
 }
 
 // ---- UI: data ----
@@ -484,9 +536,12 @@ function renderData(){
   document.getElementById("run-count").textContent=STATE.runs.length;
   rl.innerHTML = STATE.runs.length? STATE.runs.slice().reverse().map(r=>{
     const tags=[r.driver,r.kart,r.tyre,r.weather,r.asphalt!=null?`${r.asphalt}°C`:""].filter(Boolean).join(" · ");
+    const ft=a=> (a&&a.some(v=>v!=null))? a.map(v=>v!=null?Math.round(v):"–").join("/") : null;
+    const ct=ft(r.coldTemp), ht=ft(r.hotTemp);
+    const tempLine=(ct||ht)? `<br><small>temp ${ct||"–"} → ${ht||"–"} °C</small>` : "";
     return `<div class="runrow"><div>${r.track} <small>${tags}</small><br>
-      <small>cold ${r.cold.map(v=>v.toFixed(2)).join("/")} → hot ${r.hot.map(v=>v.toFixed(2)).join("/")}</small></div>
-      <button class="del" onclick="delRun('${r.id}')">delete</button></div>`;
+      <small>cold ${r.cold.map(v=>v.toFixed(2)).join("/")} → hot ${r.hot.map(v=>v.toFixed(2)).join("/")}</small>${tempLine}</div>
+      <div style="white-space:nowrap;text-align:right"><button class="ghost" style="padding:6px 10px;min-height:0;margin-bottom:4px" onclick="editRun('${r.id}')">edit</button><button class="del" onclick="delRun('${r.id}')">delete</button></div></div>`;
   }).join("") : `<p class="muted">No runs logged yet.</p>`;
 }
 function setTarget(name,v){ const x=parseFloat(v); if(!isNaN(x)){ STATE.tracks[name].target=x; save(); } }
