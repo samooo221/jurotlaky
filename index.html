@@ -94,6 +94,7 @@
       <div class="kart" id="rec-kart"></div>
       <div class="note" id="rec-breakdown"></div>
       <div class="note" id="rec-explain"></div>
+      <details style="margin-top:6px"><summary>Why these numbers?</summary><div class="note" id="rec-why"></div></details>
       <button class="ghost" style="width:100%;margin-top:10px" onclick="prefillLog()">Log the run afterwards →</button>
     </div>
   </section>
@@ -473,6 +474,7 @@ function doRecommend(){
     document.getElementById("rec-target").textContent="no data yet";
     document.getElementById("rec-conf").textContent="";
     document.getElementById("rec-explain").textContent="No base or runs for this track. Log a run first.";
+    document.getElementById("rec-why").innerHTML="";
     return;
   }
   const fmt=a=>a.map(v=>v.toFixed(2)).join("/");
@@ -492,6 +494,27 @@ function doRecommend(){
   ex+=`. Track base from ${rec.real} run${rec.real===1?"":"s"}+seed.`;
   if(rec.usedGas) ex+=` Gas law used your logged tyre temps for the rise; runs land ≈${rec.target.toFixed(2)} bar ±${(rec.sigHot.reduce((s,v)=>s+v,0)/4).toFixed(2)}.`;
   document.getElementById("rec-explain").textContent=ex;
+  document.getElementById("rec-why").innerHTML = explainRec(rec,driver,kart,tyre,weather).map(s=>`<div style="margin:5px 0">• ${s}</div>`).join("");
+}
+
+// plain-language explainer — free, offline, no LLM. Turns the recommendation object into sentences.
+function explainRec(rec, driver, kart, tyre, weather){
+  const f=a=>a.map(v=>v.toFixed(2)).join("/");
+  const out=[];
+  out.push(`These cold settings — ${f(rec.cold)} bar — are chosen to land near ${rec.target.toFixed(2)} bar hot.`);
+  out.push(`Track base is ${f(rec.base)} bar, from ${rec.real} logged run${rec.real===1?"":"s"} + the seed setup.`);
+  const chosen=[[driver,rec.off.driver],[kart,rec.off.kart],[tyre,rec.off.tyre],[weather,rec.off.weather]].filter(([v])=>v&&v.trim());
+  const moved=chosen.map(([v,o])=>[v,o,o.offset.reduce((s,x)=>s+x,0)/4]).filter(([,o,avg])=>o.n && Math.abs(avg)>=0.005);
+  if(moved.length) for(const [v,o,avg] of moved)
+    out.push(`${v} pushes it ${avg>=0?"up":"down"} ~${Math.abs(avg).toFixed(2)} bar (from ${o.n} run${o.n>1?"s":""}).`);
+  else if(chosen.some(([,o])=>o.n)) out.push(`Your driver / kart / tyre / weather match the track's average so far — no extra adjustment.`);
+  else out.push(`No driver / kart / tyre / weather history yet — this is the plain track base.`);
+  if(rec.usedGas) out.push(`Today's pressure rise is computed from your logged tyre temps by the gas law — real physics, not a guessed slope.`);
+  else out.push(`No tyre temps here, so the rise uses the linear estimate at ${rec.asphalt.toFixed(0)}°C asphalt${rec.usedDefaultTemp?" (assumed — enter the real temp for a sharper number)":""}.`);
+  const sig=(rec.sigCold.reduce((s,x)=>s+x,0)/4).toFixed(2);
+  const advice = rec.conf==="low" ? "log a few runs on this combo to sharpen it" : rec.conf==="medium" ? "usable, and it tightens as you log more" : "well-learned — trust it";
+  out.push(`Confidence: ${rec.conf} (±${sig} bar spread) — ${advice}.`);
+  return out;
 }
 
 function prefillLog(){
